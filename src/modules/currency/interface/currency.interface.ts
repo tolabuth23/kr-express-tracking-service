@@ -1,4 +1,4 @@
-import { IImportRateUnit } from '../../../utils/Currency/Interfaces/currencyIImportRate.interface'
+import { IImportRateUnit } from '../../utils/Currency/Interfaces/currencyIImportRate.interface'
 
 export interface ICurrency {
   objectId: string

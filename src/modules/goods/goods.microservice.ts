@@ -1,27 +1,27 @@
 import { Controller, InternalServerErrorException } from '@nestjs/common'
 import { MessagePattern, Payload } from '@nestjs/microservices'
 import times from 'lodash/times'
-import { UpdateQuery, UpdateWriteOpResult } from 'mongoose'
-import { ShipPeriodDocument } from '../ship-period/ship-period.schema'
+import { UpdateQuery } from 'mongoose'
 
 import { OriginDestinationEnum } from './enums/origin-destination.enum'
 import EStatusGoods from './enums/status-goods.enum'
-import { Goods, GoodsDocument } from './goodsSchema'
+import { Goods, GoodsDocument } from './goods.schema'
 import { GoodsService } from './goods.service'
-import { IGoods } from './interfaces/goods.interface'
+import { GoodsInterface } from './interfaces/goods.interface'
 import { IPayloadDelivered } from './interfaces/payload-delivered.interface'
 import { IPayloadInDestinationGoods } from './interfaces/payload-in-destination-goods.interface'
 import { IPayloadRegisterGoods } from './interfaces/payload-register-goods.interface'
 
 import { LoggerService } from '../logger/logger.service'
+import Currency from '../utils/Currency/index'
+import QRCode from '../utils/QRCode/index'
 
 import { FindOptionsInterface } from '../../interfaces/find-optins.interface'
 import {
   PaginationInterface,
   PaginationResponseInterface,
 } from '../../interfaces/pageination.interface'
-import Currency from '../../utils/Currency/index'
-import QRCode from '../../utils/QRCode/index'
+import { IUser } from './interfaces/user.interface'
 
 @Controller('goods')
 export class GoodsMicroservice {
@@ -59,7 +59,7 @@ export class GoodsMicroservice {
       }
     } catch (e) {
       this.logger.error(
-        `catch on goods get pagination: ${e?.message ?? JSON.stringify(e)}`,
+        `catch on getPagination: ${e?.message ?? JSON.stringify(e)}`,
       )
       throw new InternalServerErrorException({
         message: e?.message ?? e,
@@ -75,15 +75,15 @@ export class GoodsMicroservice {
     @Payload()
     payload: {
       amount: number
-      userId: string
+      user: string
     },
-  ): Promise<GoodsDocument> {
-    const { amount, userId } = payload
+  ): Promise<void> {
+    const { amount, user } = payload
     try {
       const promises = await times(Number(amount), async () => {
         const createData = {
           ...payload,
-          user: userId,
+          user,
         }
 
         const qrCodeInstance = new QRCode({ data: createData })
@@ -97,11 +97,9 @@ export class GoodsMicroservice {
       })
 
       const qrCode = await Promise.all(promises)
-      return this.goodsService.create(qrCode)
+      await this.goodsService.create(qrCode)
     } catch (e) {
-      this.logger.error(
-        `catch on goods create: ${e?.message ?? JSON.stringify(e)}`,
-      )
+      this.logger.error(`catch on create: ${e?.message ?? JSON.stringify(e)}`)
       throw new InternalServerErrorException({
         message: e?.message ?? e,
       })
@@ -115,12 +113,12 @@ export class GoodsMicroservice {
   async register(
     @Payload()
     payload: {
-      goods: IGoods
+      goods: GoodsInterface
       body: IPayloadRegisterGoods
     },
-  ): Promise<GoodsDocument> {
+  ): Promise<void> {
     const { goods, body } = payload
-    const { userId } = body
+    const { user } = body
     const originArrivedAt =
       goods?.status === EStatusGoods.REGISTERED
         ? goods.originArrivedAt
@@ -131,17 +129,15 @@ export class GoodsMicroservice {
         status: EStatusGoods.REGISTERED,
         originArrivedAt,
         meta: {
-          userObjectId: userId,
+          userObjectId: user,
         },
         origin: OriginDestinationEnum.JP,
         destination: OriginDestinationEnum.TH,
       }
 
-      return this.goodsService.register(goods.objectId, registerBody)
+      await this.goodsService.register(goods.objectId, registerBody)
     } catch (e) {
-      this.logger.error(
-        `catch on goods register: ${e?.message ?? JSON.stringify(e)}`,
-      )
+      this.logger.error(`catch on register: ${e?.message ?? JSON.stringify(e)}`)
       throw new InternalServerErrorException({
         message: e?.message ?? e,
       })
@@ -155,25 +151,27 @@ export class GoodsMicroservice {
   async UpdateToInDestination(
     @Payload()
     payload: {
-      goods: IGoods
+      goods: GoodsInterface
       body: IPayloadInDestinationGoods
+      user: IUser
     },
-  ): Promise<[GoodsDocument, ShipPeriodDocument]> {
-    const { goods, body } = payload
-    const { category, currencyUnit, weight, rate } = body
+  ): Promise<void> {
+    const { goods, body, user } = payload
+    const { categories, currency, weight, rate } = body
 
     const currencyInstance = new Currency({
       weight: weight,
-      category: category.value,
-      currencyRate: currencyUnit.value,
+      category: categories.value,
+      currencyRate: currency.value,
       cod: goods.cod,
-      userRole: goods.user.level,
+      userRole: user.level,
       rate: rate,
     })
 
     const registerBody: UpdateQuery<Goods> = {
       ...body,
-      currency: currencyUnit,
+      category: categories.objectId,
+      currency: currency,
       total: currencyInstance.getTotal(),
       status: EStatusGoods.IN_DESTINATION,
       destinationArrivedAt: new Date(),
@@ -182,16 +180,14 @@ export class GoodsMicroservice {
     }
 
     try {
-      return this.goodsService.UpdateToInDestination(
+      await this.goodsService.UpdateToInDestination(
         goods.objectId,
-        goods.shipPeriod._id,
+        goods.shipPeriod,
         registerBody,
       )
     } catch (e) {
       this.logger.error(
-        `catch on goods update in destination: ${
-          e?.message ?? JSON.stringify(e)
-        }`,
+        `catch on update in-destination: ${e?.message ?? JSON.stringify(e)}`,
       )
       throw new InternalServerErrorException({
         message: e?.message ?? e,
@@ -206,17 +202,17 @@ export class GoodsMicroservice {
   async delivered(
     @Payload()
     payload: {
-      goods: IGoods
+      goods: GoodsInterface
       body: IPayloadDelivered
     },
-  ): Promise<UpdateWriteOpResult> {
+  ): Promise<void> {
     let registerBody: UpdateQuery<GoodsDocument>
     const { goods, body } = payload
     const {
       weight,
-      category,
-      currencyUnit,
-      user,
+      categories,
+      currency,
+      users,
       trackingNumber,
       cod,
       deliveryAddress,
@@ -224,25 +220,24 @@ export class GoodsMicroservice {
 
     const currencyInstance = new Currency({
       weight: weight,
-      category: category.value,
-      currencyRate: currencyUnit.value,
+      category: categories.value,
+      currencyRate: currency.value,
       cod: goods.cod,
-      userRole: user.level,
+      userRole: users.level,
     })
-
     if (goods.status === EStatusGoods.IN_DESTINATION) {
       registerBody = {
-        user: user,
+        user: users.objectId,
         trackingNumber: trackingNumber,
         cod: cod,
         weight: weight,
-        category: category,
-        currency: currencyUnit,
+        category: categories.objectId,
+        currency: currency,
         deliveryAddress: deliveryAddress,
         total: currencyInstance.getTotal(),
         importRate: currencyInstance.getImportRate(),
         meta: {
-          user: user.objectId,
+          user: users.objectId,
         },
         status: EStatusGoods.DELIVERED,
         deliveredAt: new Date(),
@@ -251,16 +246,35 @@ export class GoodsMicroservice {
     }
 
     registerBody.$set = {
-      trackingProvider: body.trackingProvider,
+      trackingProvider: body.trackingProviders,
       destinationTrackingNumber: body.destinationTrackingNumber,
       deliveryCost: body.deliveryCost,
     }
 
     try {
-      return this.goodsService.delivered(goods.objectId, registerBody)
+      await this.goodsService.delivered(goods.objectId, registerBody)
     } catch (e) {
       this.logger.error(
-        `catch on goods delivered: ${e?.message ?? JSON.stringify(e)}`,
+        `catch on delivered: ${e?.message ?? JSON.stringify(e)}`,
+      )
+      throw new InternalServerErrorException({
+        message: e?.message ?? e,
+      })
+    }
+  }
+
+  @MessagePattern({
+    cmd: 'goods',
+    method: 'getByTrackingNumber',
+  })
+  async getByTrackingNumber(
+    @Payload() trackingNumber: string,
+  ): Promise<GoodsDocument> {
+    try {
+      return this.goodsService.getByTrackingNumber(trackingNumber)
+    } catch (e) {
+      this.logger.error(
+        `catch on getByTrackingNumber: ${e?.message ?? JSON.stringify(e)}`,
       )
       throw new InternalServerErrorException({
         message: e?.message ?? e,
@@ -272,12 +286,15 @@ export class GoodsMicroservice {
     cmd: 'goods',
     method: 'getByObjectId',
   })
-  async getByObjectId(@Payload() objectId: string): Promise<GoodsDocument> {
+  async getByObjectId(
+    @Payload() payload: { objectId: string; query: object },
+  ): Promise<GoodsDocument> {
+    const { objectId, query } = payload
     try {
-      return this.goodsService.getByObjectId(objectId)
+      return this.goodsService.getByObjectId(objectId, query)
     } catch (e) {
       this.logger.error(
-        `catch on goods get by object: ${e?.message ?? JSON.stringify(e)}`,
+        `catch on getByObject: ${e?.message ?? JSON.stringify(e)}`,
       )
       throw new InternalServerErrorException({
         message: e?.message ?? e,
@@ -287,25 +304,29 @@ export class GoodsMicroservice {
 
   @MessagePattern({
     cmd: 'goods',
-    method: 'getByStatus',
+    method: 'getByShipPeriod',
   })
-  async getByStatus(
-    @Payload()
-    payload: {
-      objectId: string
-      status: object
-    },
-  ): Promise<GoodsDocument> {
-    const { objectId, status } = payload
+  async getByShipPeriod(
+    @Payload() payload: { shipPeriodId: string; query: object },
+  ): Promise<GoodsDocument[]> {
+    const { shipPeriodId, query } = payload
     try {
-      return this.goodsService.getByStatus(objectId, status)
+      return this.goodsService.getByShipPeriod(shipPeriodId, query)
     } catch (e) {
       this.logger.error(
-        `catch on goods get by status: ${e?.message ?? JSON.stringify(e)}`,
+        `catch on getByObject: ${e?.message ?? JSON.stringify(e)}`,
       )
       throw new InternalServerErrorException({
         message: e?.message ?? e,
       })
     }
+  }
+
+  @MessagePattern({
+    cmd: 'goods',
+    method: 'exportQR',
+  })
+  async exportQR(@Payload() payload) {
+    return this.goodsService.exportQR(payload)
   }
 }

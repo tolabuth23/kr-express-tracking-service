@@ -2,7 +2,7 @@ import { Controller } from '@nestjs/common'
 import { Payload } from '@nestjs/microservices'
 import { MessagePattern } from '@nestjs/microservices'
 
-import { CurrencyDocument } from './currencySchema'
+import { CurrencyDocument } from './currency.schema'
 import { CurrencyService } from './currency.service'
 
 @Controller()

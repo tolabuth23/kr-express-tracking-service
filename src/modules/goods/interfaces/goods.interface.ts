@@ -1,12 +1,13 @@
+import { ICurrency } from '../../currency/interface/currency.interface'
+import { ImportRateInterface } from '../../import-rate/interfaces/import-rate.interface'
 import { IDeliveryAddress } from './delivery-address.interface'
-import { IUser } from './user.interface'
 
-export interface IGoods {
+export interface GoodsInterface {
   objectId: string
 
-  user: IUser
+  user?: string
 
-  shipPeriod?: any
+  shipPeriod?: string
 
   trackingNumber?: string
 
@@ -22,9 +23,9 @@ export interface IGoods {
 
   rate?: number
 
-  currency?: any
+  currency?: ICurrency
 
-  importRate?: any
+  importRate?: ImportRateInterface
 
   total?: number
 

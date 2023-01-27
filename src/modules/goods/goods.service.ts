@@ -9,11 +9,10 @@ import { sumBy } from 'lodash'
 import { FilterQuery, Model, UpdateQuery, UpdateWriteOpResult } from 'mongoose'
 
 import EStatusGoods from './enums/status-goods.enum'
-import { Goods, GoodsDocument } from './goodsSchema'
+import { Goods, GoodsDocument } from './goods.schema'
 
 import { LoggerService } from '../logger/logger.service'
 import EStatusShip from '../ship-period/enum/status-ship.enum'
-import { ShipPeriodDocument } from '../ship-period/ship-period.schema'
 import { ShipPeriodService } from '../ship-period/ship-period.service'
 
 @Injectable()
@@ -38,12 +37,10 @@ export class GoodsService {
     return Promise.all([
       this.goodsModule
         .find(conditions)
-        .populate('user', ['objectId', 'level', 'displayName'])
-        .populate('shipPeriod', ['objectId', 'endAt'])
         .select(select)
+        .sort(sort)
         .skip((page - 1) * +perPage)
         .limit(+perPage)
-        .sort(sort)
         .lean(),
       this.goodsModule.count(conditions),
     ])
@@ -55,53 +52,59 @@ export class GoodsService {
 
   async register(
     objectId: string,
-    registerBody: UpdateQuery<GoodsDocument>,
-  ): Promise<GoodsDocument> {
-    return this.goodsModule.findOneAndUpdate({ objectId }, registerBody, {
+    body: UpdateQuery<GoodsDocument>,
+  ): Promise<UpdateWriteOpResult> {
+    return this.goodsModule.updateOne({ objectId }, body, {
       new: true,
     })
   }
 
-  async getByStatus(objectId: string, status: object): Promise<GoodsDocument> {
+  async getByTrackingNumber(trackingNumber: string): Promise<GoodsDocument> {
     return this.goodsModule
       .findOne({
-        objectId: objectId,
-        status: status,
+        trackingNumber,
       })
-      .select({ qr: 0 })
-      .populate('user', ['level'])
       .lean()
   }
 
-  async getByObjectId(objectId: string): Promise<GoodsDocument> {
+  async getByObjectId(objectId: string, query: object): Promise<GoodsDocument> {
     return this.goodsModule
       .findOne({
         objectId,
+        ...query,
       })
       .select({ qr: 0 })
       .lean()
   }
 
-  async getOneGoods(objectId: string): Promise<GoodsDocument> {
+  async getByShipPeriod(
+    objectId: string,
+    query = {},
+  ): Promise<GoodsDocument[]> {
     return this.goodsModule
-      .findOne({ objectId: objectId })
-      .populate('user', ['objectId', 'level', 'displayName'])
-      .populate('shipPeriod', ['objectId', 'status', 'endAt'])
+      .find({
+        shipPeriod: objectId,
+        status: { $in: [EStatusGoods.IN_DESTINATION, EStatusGoods.DELIVERED] },
+        ...query,
+      })
       .lean()
   }
 
   async UpdateToInDestination(
     objectId: string,
-    _id: string,
+    shipObjectId: string,
     update: UpdateQuery<GoodsDocument>,
-  ): Promise<[GoodsDocument, ShipPeriodDocument]> {
+  ): Promise<[UpdateWriteOpResult, UpdateWriteOpResult]> {
     return Promise.all([
-      this.goodsModule.findOneAndUpdate({ objectId }, update, {
+      this.goodsModule.updateOne({ objectId }, update, {
         new: true,
       }),
       this.shipPeriodService
         .getModel()
-        .findOneAndUpdate({ _id }, { status: EStatusShip.IN_DESTINATION }),
+        .updateOne(
+          { objectId: shipObjectId },
+          { status: EStatusShip.IN_DESTINATION },
+        ),
     ])
   }
 
@@ -134,15 +137,15 @@ export class GoodsService {
 
   async getGoodsInDestinationByShipPeriod(
     shipPeriodId: string,
-    query = {},
+    conditions = {},
   ): Promise<GoodsDocument[]> {
     return this.goodsModule
       .find({
-        _id: shipPeriodId,
+        shipPeriod: shipPeriodId,
         status: {
           $in: [EStatusGoods.IN_DESTINATION, EStatusGoods.DELIVERED],
-          ...query,
         },
+        ...conditions,
       })
       .lean()
   }
@@ -168,7 +171,7 @@ export class GoodsService {
     const aggregate: any = [
       {
         $match: {
-          shipPeriodId,
+          shipPeriod: shipPeriodId,
           ...query,
         },
       },
@@ -219,5 +222,18 @@ export class GoodsService {
         message: e?.message ?? e,
       })
     }
+  }
+
+  exportQR(conditions: FilterQuery<GoodsDocument>) {
+    return Promise.all([
+      this.goodsModule
+        .find(conditions)
+        .select({
+          qr: 1,
+          objectId: 1,
+        })
+        .lean(),
+      this.goodsModule.countDocuments(conditions),
+    ])
   }
 }

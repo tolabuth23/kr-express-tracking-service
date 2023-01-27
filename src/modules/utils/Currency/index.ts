@@ -1,7 +1,6 @@
-import first from 'lodash/first'
-import { IImportRateValue } from '../../modules/import-rate/interfaces/import-rate.interface'
-
+import { IImportRateValue } from '../../import-rate/interfaces/import-rate.interface'
 import { IImportRateUnit } from './Interfaces/currencyIImportRate.interface'
+import first from 'lodash/first'
 
 export default class Currency {
   truWeight: number
