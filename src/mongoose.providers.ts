@@ -6,8 +6,10 @@ import { Currency, CurrencySchema } from './modules/currency/currencySchema'
 import { DeliveryProviderSchema } from './modules/delivery-providers/delivery-provider.schema'
 import { DeliveryProviders } from './modules/delivery-providers/delivery-provider.schema'
 import { Goods, GoodsSchema } from './modules/goods/goodsSchema'
-import { ImportRateSchema } from './modules/import-rate/import-rate.schema'
-import { ImportRate } from './modules/import-rate/import-rate.schema'
+import {
+  ImportRate,
+  ImportRateSchema,
+} from './modules/import-rate/import-rate.schema'
 import { Sequence, SequenceSchema } from './modules/sequences/sequence.schema'
 import {
   ShipPeriod,

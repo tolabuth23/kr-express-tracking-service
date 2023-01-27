@@ -1,6 +1,5 @@
 import { Controller, InternalServerErrorException } from '@nestjs/common'
 import { MessagePattern, Payload } from '@nestjs/microservices'
-import { LeanDocument, UpdateWriteOpResult } from 'mongoose'
 
 import { IPayloadShipPeriod } from './interface/payload-ship-period.interface'
 import { ShipPeriod, ShipPeriodDocument } from './ship-period.schema'
@@ -15,7 +14,7 @@ import {
   PaginationInterface,
   PaginationResponseInterface,
 } from '../../interfaces/pageination.interface'
-import { GoodsDocument } from '../goods/goodsSchema'
+import { GoodsDocument } from '../goods/goods.schema'
 
 @Controller('ship-periods')
 export class ShipPeriodMicroservice {
@@ -71,6 +70,7 @@ export class ShipPeriodMicroservice {
       const { value } = await this.sequenceService.getNextSequence(
         'SHIP_PERIOD',
       )
+
       return this.shipPeriodService.register(endAt, value)
     } catch (e) {
       this.logger.error(e?.message ?? JSON.stringify(e))
@@ -85,10 +85,11 @@ export class ShipPeriodMicroservice {
     method: 'getByObjectId',
   })
   async getByObjectId(
-    @Payload() objectId: string,
+    @Payload() payload: { objectId: string; query: object },
   ): Promise<ShipPeriodDocument> {
+    const { objectId, query = {} } = payload
     try {
-      return this.shipPeriodService.getByObjectId(objectId)
+      return this.shipPeriodService.getByObjectId(objectId, query)
     } catch (e) {
       this.logger.error(e?.message ?? JSON.stringify(e))
       throw new InternalServerErrorException({
@@ -152,11 +153,9 @@ export class ShipPeriodMicroservice {
     cmd: 'shipPeriod',
     method: 'updateToInTransit',
   })
-  async updateToInTransit(
-    @Payload() payload: IPayloadShipPeriod,
-  ): Promise<[LeanDocument<ShipPeriodDocument>, UpdateWriteOpResult]> {
+  async updateToInTransit(@Payload() objectId: string): Promise<void> {
     try {
-      return this.shipPeriodService.updateToInTransit(payload)
+      await this.shipPeriodService.updateToInTransit(objectId)
     } catch (e) {
       this.logger.error(e?.message ?? JSON.stringify(e))
       throw new InternalServerErrorException({
@@ -169,11 +168,9 @@ export class ShipPeriodMicroservice {
     cmd: 'shipPeriod',
     method: 'updateToInDestination',
   })
-  async updateToInDestination(
-    @Payload() payload: IPayloadShipPeriod,
-  ): Promise<UpdateWriteOpResult> {
+  async updateToInDestination(@Payload() objectId: string): Promise<void> {
     try {
-      return this.shipPeriodService.updateToInDestination(payload)
+      await this.shipPeriodService.updateToInDestination(objectId)
     } catch (e) {
       this.logger.error(e?.message ?? JSON.stringify(e))
       throw new InternalServerErrorException({
@@ -184,32 +181,26 @@ export class ShipPeriodMicroservice {
 
   @MessagePattern({
     cmd: 'shipPeriod',
-    method: 'getOrderByUser',
+    method: 'getUserOrderByShipPeriod',
   })
-  async getUserByOrder(
+  async getUserOrderByShipPeriod(
     @Payload()
     payload: {
       query: PaginationInterface & FindOptionsInterface<GoodsDocument>
       shipPeriod: IPayloadShipPeriod
     },
-  ): Promise<PaginationResponseInterface<ShipPeriod>> {
+  ): Promise<(GoodsDocument[] | number)[]> {
     const { query, shipPeriod } = payload
     const { filter, page, perPage } = query
     try {
-      const [records, count] = await this.shipPeriodService.getUserOrder(
-        shipPeriod as ShipPeriodDocument,
+      return this.shipPeriodService.getUserOrderByShipPeriod(
+        shipPeriod,
         filter,
         {
           page,
           perPage,
         },
       )
-      return {
-        page,
-        perPage,
-        count,
-        records,
-      }
     } catch (e) {
       this.logger.error(e?.message ?? JSON.stringify(e))
       throw new InternalServerErrorException({
@@ -222,7 +213,7 @@ export class ShipPeriodMicroservice {
     cmd: 'shipPeriod',
     method: 'getByEndAt',
   })
-  async getByEndAt(@Payload() endAt: Date): Promise<ShipPeriod | null> {
+  async getByEndAt(@Payload() endAt: Date): Promise<ShipPeriod> {
     try {
       return this.shipPeriodService.getByEndAt(endAt)
     } catch (e) {

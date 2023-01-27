@@ -6,21 +6,18 @@ import {
 } from '@nestjs/common'
 import { ClientProxy } from '@nestjs/microservices'
 import { InjectModel } from '@nestjs/mongoose'
-import { sumBy } from 'lodash'
-import pick from 'lodash/pick'
-import { FilterQuery, LeanDocument, Model, UpdateWriteOpResult } from 'mongoose'
-import { lastValueFrom } from 'rxjs'
+import { FilterQuery, Model, UpdateWriteOpResult } from 'mongoose'
+import { IShipPeriod } from '../goods/interfaces/ship-period.interface'
 
 import EStatusShip from './enum/status-ship.enum'
-import { IPayloadShipPeriod } from './interface/payload-ship-period.interface'
 import { ShipPeriod, ShipPeriodDocument } from './ship-period.schema'
 
-import { GoodsDocument } from '../goods/goodsSchema'
+import { GoodsDocument } from '../goods/goods.schema'
 import { GoodsService } from '../goods/goods.service'
+import EStatusGoods from '../goods/enums/status-goods.enum'
 import { LoggerService } from '../logger/logger.service'
 
 import { RMQService } from '../../microservice.constants'
-import EStatusGoods from '../goods/enums/status-goods.enum'
 
 @Injectable()
 export class ShipPeriodService {
@@ -37,17 +34,19 @@ export class ShipPeriodService {
     return this.shipPeriodModel
   }
 
-  async getByObjectId(objectId: string): Promise<ShipPeriodDocument> {
-    return this.shipPeriodModel.findOne({ objectId })
+  async getByObjectId(
+    objectId: string,
+    query: object,
+  ): Promise<ShipPeriodDocument> {
+    return this.shipPeriodModel.findOne({ objectId, ...query })
   }
 
   async register(endAt: Date, value: number): Promise<ShipPeriodDocument> {
     try {
-      const shipPeriod = new this.shipPeriodModel({
+      return this.shipPeriodModel.create({
         endAt,
         runningNumber: value,
       })
-      return shipPeriod.save()
     } catch (error) {
       this.logger.error(`ShipPeriod: ${error.message ?? error}`)
       throw new InternalServerErrorException({
@@ -57,7 +56,7 @@ export class ShipPeriodService {
   }
 
   async getPagination(
-    conditions: FilterQuery<ShipPeriod>,
+    conditions: FilterQuery<ShipPeriodDocument>,
     pagination?: { page: number; perPage: number },
     sort: { [key: string]: number } | string = { _id: 1 },
     select = {},
@@ -65,13 +64,12 @@ export class ShipPeriodService {
     const { page = 1, perPage = 20 } = pagination
 
     const [count, recordShipPeriods] = await Promise.all([
-      this.shipPeriodModel.count(conditions as ShipPeriod),
+      this.shipPeriodModel.count(conditions),
       this.shipPeriodModel
         .find(conditions as ShipPeriod)
         .select(select)
         .skip((page - 1) * +perPage)
         .limit(+perPage)
-        .sort(sort)
         .lean(),
     ])
 
@@ -109,7 +107,6 @@ export class ShipPeriodService {
       this.shipPeriodModel
         .find(conditions)
         .select(select)
-        .sort(sort)
         .skip((page - 1) * +perPage)
         .limit(+perPage)
         .lean(),
@@ -118,91 +115,47 @@ export class ShipPeriodService {
   }
 
   async updateToInTransit(
-    shipPeriod: IPayloadShipPeriod,
-  ): Promise<[LeanDocument<ShipPeriodDocument>, UpdateWriteOpResult]> {
+    objectId: string,
+  ): Promise<[UpdateWriteOpResult, UpdateWriteOpResult]> {
     return Promise.all([
       this.shipPeriodModel
-        .findOneAndUpdate(
-          { objectId: shipPeriod.objectId },
-          {
-            status: EStatusShip.IN_TRANSIT,
-          },
-        )
+        .updateOne({ objectId }, { status: EStatusShip.IN_TRANSIT })
         .lean(),
       this.goodsService
         .getModel()
         .updateMany(
-          { shipPeriod: shipPeriod._id },
-          {
-            status: EStatusGoods.IN_TRANSIT,
-          },
+          { shipPeriod: objectId },
+          { status: EStatusGoods.IN_TRANSIT },
         )
         .lean(),
     ])
   }
 
-  async updateToInDestination(
-    shipPeriod: IPayloadShipPeriod,
-  ): Promise<UpdateWriteOpResult> {
+  async updateToInDestination(objectId: string): Promise<UpdateWriteOpResult> {
     return this.shipPeriodModel.updateOne(
-      { objectId: shipPeriod.objectId },
+      { objectId },
       { status: EStatusShip.IN_DESTINATION },
     )
   }
 
-  async getUserOrder(
-    shipPeriod: ShipPeriodDocument,
+  async getUserOrderByShipPeriod(
+    shipPeriod: IShipPeriod,
     conditions: FilterQuery<GoodsDocument>,
     pagination?: { page: number; perPage: number },
-  ): Promise<[ShipPeriod[], number]> {
+  ) {
     const { page = 1, perPage = 20 } = pagination
-    const records = []
-    try {
-      const [userOrders, count] = await Promise.all([
-        this.goodsService.getUserOrderByShipPeriod(
-          shipPeriod._id,
-          conditions,
-          (page - 1) * +perPage,
-          perPage,
-        ),
-        this.goodsService.countUserOrderByShipPeriod(
-          shipPeriod._id,
-          conditions,
-        ),
-      ])
-
-      for (const userOrder of userOrders) {
-        const [user, goodsInDestination] = await Promise.all([
-          lastValueFrom(
-            this.userService
-              .send(
-                { cmd: 'user', method: 'getByObjectId' },
-                userOrder.user.objectId,
-              )
-              .pipe(),
-          ),
-          this.goodsService.getGoodsInDestinationByShipPeriod(shipPeriod._id, {
-            user: userOrder.user,
-            'deliveryAddress._id': userOrder._id,
-          }),
-        ])
-        const obj = {
-          ...pick(user, ['objectId', 'phoneNumber']),
-          paymentAmount: sumBy(goodsInDestination, 'total'),
-          originGoodsReceive: userOrders.length,
-          deliveryAddress: userOrder.deliveryAddress,
-          goodsInDestination: goodsInDestination.length,
-        }
-        records.push(obj)
-      }
-
-      return Promise.all([records, count])
-    } catch (error) {
-      this.logger.error(`ShipPeriod: ${error.message ?? error}`)
-      throw new InternalServerErrorException({
-        message: error.message ?? error,
-      })
-    }
+    return Promise.all([
+      this.goodsService.getUserOrderByShipPeriod(
+        shipPeriod.objectId,
+        conditions,
+        (page - 1) * +perPage,
+        perPage,
+      ),
+      this.goodsService.countUserOrderByShipPeriod(
+        shipPeriod.objectId,
+        conditions,
+      ),
+    ])
   }
 
   async getByEndAt(endAt: Date): Promise<ShipPeriodDocument> {

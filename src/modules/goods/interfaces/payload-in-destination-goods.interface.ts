@@ -1,18 +1,19 @@
 import { IDeliveryAddress } from './delivery-address.interface'
 
 import { ICurrency } from '../../currency/interface/currency.interface'
-import { IImportRate } from '../../import-rate/interfaces/import-rate.interface'
+import { ImportRateInterface } from '../../import-rate/interfaces/import-rate.interface'
+import { IUser } from './user.interface'
 
 export interface IPayloadInDestinationGoods {
   trackingNumber: string
 
-  userId: string
+  users: IUser
 
   weight: number
 
-  category: IImportRate
+  categories: ImportRateInterface
 
-  currencyUnit: ICurrency
+  currency: ICurrency
 
   cod: number
 

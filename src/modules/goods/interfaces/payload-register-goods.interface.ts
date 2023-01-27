@@ -5,7 +5,7 @@ export interface IPayloadRegisterGoods {
 
   trackingNumber: string
 
-  userId: string
+  user: string
 
   cod: number
 

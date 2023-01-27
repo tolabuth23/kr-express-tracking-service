@@ -1,10 +1,12 @@
-import { ImportRateValueInterface } from './import-rate-value.interface'
+import EStatus from '../enum/status.enum'
+export interface IImportRateValue {
+  user: object
+  dealer: object
+}
 
-import { StatusEnum } from '../enum/status.enum'
-
-export interface IImportRate {
-  _id?: string
+export interface ImportRateInterface {
+  objectId?: string
   name: string
-  value: ImportRateValueInterface
-  status: StatusEnum
+  value: IImportRateValue
+  status: EStatus
 }

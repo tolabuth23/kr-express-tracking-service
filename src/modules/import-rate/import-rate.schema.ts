@@ -2,12 +2,17 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document } from 'mongoose'
 import { nanoid } from 'nanoid'
 
-import { StatusEnum } from './enum/status.enum'
-import { UnitEnum } from './enum/unit.enum'
-import { ImportRateValueInterface } from './interfaces/import-rate-value.interface'
+import { IImportRateValue } from './interfaces/import-rate.interface'
+import EStatus from './enum/status.enum'
+import EUnit from './enum/unit.enum'
 
 export type ImportRateDocument = ImportRate & Document
 
+@Schema({
+  _id: false,
+  timestamps: true,
+  versionKey: false,
+})
 export class ImportRateValue {
   @Prop({
     type: Number,
@@ -29,16 +34,16 @@ export class ImportRateValue {
 
   @Prop({
     type: String,
-    enum: UnitEnum,
+    enum: EUnit,
   })
   type: string
 
   @Prop({
     type: String,
-    enum: StatusEnum,
-    default: StatusEnum.ACTIVE,
+    enum: EStatus,
+    default: EStatus.ACTIVE,
   })
-  status?: StatusEnum
+  status?: EStatus
 }
 
 @Schema({
@@ -54,7 +59,7 @@ export class ImportRate {
     unique: true,
     default: () => nanoid(),
   })
-  objectId: string
+  objectId?: string
 
   @Prop({
     type: String,
@@ -76,13 +81,13 @@ export class ImportRate {
       },
     },
   })
-  value: ImportRateValueInterface
+  value?: IImportRateValue
 
   @Prop({
-    type: StatusEnum,
-    default: StatusEnum.ACTIVE,
+    type: EStatus,
+    default: EStatus.ACTIVE,
   })
-  status?: StatusEnum
+  status?: EStatus
 }
 
 export const ImportRateSchema = SchemaFactory.createForClass(ImportRate)

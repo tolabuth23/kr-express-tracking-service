@@ -1,4 +1,5 @@
-export interface IPayloadShipPeriod {
+export interface IShipPeriod {
+  _id?: string
   objectId: string
   status: string
   endAt: Date

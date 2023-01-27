@@ -4,14 +4,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
-import { FilterQuery, Model } from 'mongoose'
-import { nanoid } from 'nanoid'
+import { FilterQuery, Model, UpdateQuery } from 'mongoose'
 
-import { StatusEnum } from './enum/status.enum'
-import { UnitEnum } from './enum/unit.enum'
-import { ValueEnum } from './enum/value.enum'
 import { ImportRate, ImportRateDocument } from './import-rate.schema'
 import { importRateInitData } from './init/import-rate.init'
+import EStatus from './enum/status.enum'
 
 import { LoggerService } from '../logger/logger.service'
 
@@ -20,6 +17,7 @@ export class ImportRateService implements OnModuleInit {
   private readonly logger: LoggerService = new LoggerService(
     ImportRateService.name,
   )
+
   @InjectModel(ImportRate.name)
   private readonly importRateModule: Model<ImportRateDocument>
 
@@ -28,7 +26,7 @@ export class ImportRateService implements OnModuleInit {
   }
 
   async getImportRates(
-    conditions: FilterQuery<ImportRate>,
+    conditions: FilterQuery<ImportRateDocument>,
     pagination?: { page: number; perPage: number },
     sort: { [key: string]: number } | string = { _id: 1 },
     select = {},
@@ -37,163 +35,61 @@ export class ImportRateService implements OnModuleInit {
 
     return Promise.all([
       this.importRateModule
-        .find(conditions as ImportRate)
+        .find(ImportRate)
         .select(select)
         .skip((Number(page) - 1) * +perPage)
         .limit(+perPage)
         .lean(),
-      this.importRateModule.count(conditions as ImportRate),
+      this.importRateModule.count(ImportRate),
     ])
   }
 
-  async getOneImportRates(objectId: string): Promise<ImportRate> {
+  async getOneImportRate(objectId: string): Promise<ImportRateDocument> {
     return this.importRateModule.findOne({ objectId: objectId }).lean()
   }
 
-  // async findImportRateByTypeName(
-  //   typeName: string,
-  // ): Promise<ImportRate | undefined> {
-  //   return this.importRateModule.findOne({ typeName }).lean()
-  // }
-
-  async createImportRates(body) {
-    const { typeName, w0, w1, w2, w3 } = body
-    const importRateValue = [
-      {
-        min: 0,
-        max: 50,
-        rate: w0,
-        type: UnitEnum.KILOGRAM,
-      },
-      {
-        min: 51,
-        max: 99,
-        rate: w1,
-        type: UnitEnum.KILOGRAM,
-      },
-      {
-        min: 100,
-        max: 199,
-        rate: w2,
-        type: UnitEnum.KILOGRAM,
-      },
-      {
-        min: 200,
-        max: null,
-        rate: w3,
-        type: UnitEnum.KILOGRAM,
-      },
-    ]
-    const createCreateObject = {
-      name: typeName,
-      value: {
-        [ValueEnum.USER]: importRateValue,
-        [ValueEnum.DEALER]: importRateValue,
-      },
-      status: StatusEnum.ACTIVE,
-    }
-
-    return this.importRateModule.create(createCreateObject)
+  async create(
+    body: UpdateQuery<ImportRateDocument>,
+  ): Promise<ImportRateDocument> {
+    return this.importRateModule.create(body)
   }
 
-  async updateImportRates(objectId: string, body) {
-    const { typeName, w0, w1, w2, w3 } = body
-    const newImportRateValue = [
-      {
-        min: 0,
-        max: 50,
-        rate: w0,
-        type: UnitEnum.KILOGRAM,
-      },
-      {
-        min: 51,
-        max: 99,
-        rate: w1,
-        type: UnitEnum.KILOGRAM,
-      },
-      {
-        min: 100,
-        max: 199,
-        rate: w2,
-        type: UnitEnum.KILOGRAM,
-      },
-      {
-        min: 200,
-        max: null,
-        rate: w3,
-        type: UnitEnum.KILOGRAM,
-      },
-    ]
-
-    const rateUpdateObject = {
-      name: typeName,
-      value: {
-        [ValueEnum.USER]: newImportRateValue,
-        [ValueEnum.DEALER]: newImportRateValue,
-      },
-    }
-    return this.importRateModule.findOneAndUpdate(
-      { objectId: objectId },
-      rateUpdateObject,
-    )
+  async update(
+    objectId: string,
+    body: UpdateQuery<ImportRateDocument>,
+  ): Promise<ImportRateDocument> {
+    return this.importRateModule.findOneAndUpdate({ objectId: objectId }, body)
   }
 
-  async deleteImportRates(objectId: string) {
-    return this.importRateModule.findOneAndDelete({
+  async delete(objectId: string): Promise<string> {
+    await this.importRateModule.findOneAndDelete({
       objectId: objectId,
-      status: StatusEnum.INACTIVE,
+      status: EStatus.INACTIVE,
     })
-  }
-
-  async getImportRateByCategories(query: any, page: number, perPage: number) {
-    let pCount, pRecord
-    try {
-      ;[pCount, pRecord] = await Promise.all([
-        this.importRateModule.count(query),
-        this.importRateModule
-          .find(query)
-          .select({
-            name: 1,
-            value: 1,
-          })
-          .skip((+page - 1) * +perPage)
-          .limit(+perPage)
-          .sort({ createdAt: 1 }),
-      ])
-    } catch (error) {
-      this.logger.error(`ImportRate: ${error.message ?? error}`)
-      throw new InternalServerErrorException({
-        message: error.message ?? error,
-      })
-    }
-    return [pCount, pRecord]
+    return Promise.resolve('Delete import rate successfully')
   }
 
   async onModuleInit() {
-    let importRates: number
+    let importRates: ImportRateDocument[]
+
     try {
-      importRates = await this.importRateModule.count()
-    } catch (error) {
-      this.logger.error(`ImportRate: ${error.message ?? error}`)
+      importRates = await this.importRateModule.find().lean()
+    } catch (e) {
+      this.logger.error(
+        `catch on importRateInit: ${e?.message ?? JSON.stringify(e)}`,
+      )
       throw new InternalServerErrorException({
-        message: error.message ?? error,
+        message: e?.message ?? e,
       })
     }
-    if (!importRates) {
-      for (const importRate of importRateInitData) {
-        const newImportRate = new this.importRateModule({
-          name: importRate.name,
-          status: importRate.status,
-          value: importRate.value,
-        })
-        try {
-          await newImportRate.save()
-        } catch (error) {
-          this.logger.error(`ImportRate: ${error.message ?? error}`)
-          throw new InternalServerErrorException({
-            message: error.message ?? error,
-          })
-        }
+
+    for (const importRate of importRateInitData) {
+      if (
+        !importRates
+          .map((importRates) => importRates.name)
+          .includes(importRate.name)
+      ) {
+        await this.importRateModule.create(importRate)
       }
     }
   }
